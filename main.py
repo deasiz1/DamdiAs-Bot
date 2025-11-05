@@ -161,4 +161,38 @@ async def address(message: types.Message, state: FSMContext):
     data = await state.get_data()
     order_id = random.randint(1000, 9999)
     await state.update_data(order_id=order_id)
-    total =
+    total = PRICE_MEAL * data['quantity'] + (DELIVERY_COST if data['mode']=="delivery" else 0)
+    await message.answer(f"Ваш заказ #{order_id}:\n{data['day']}: {data['menu'][data['day']]}\nКол-во: {data['quantity']}\nИтог: {total} KZT\n\n{data['payment_text']}")
+    await state.set_state(OrderStates.waiting_for_payment)
+
+@dp.message(StateFilter([OrderStates.waiting_for_payment, OrderStates.waiting_for_time]), content_types=[ContentType.DOCUMENT, ContentType.PHOTO])
+async def payment_upload(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    await message.answer(f"Спасибо! Ваш заказ #{data.get('order_id', '')} принят и будет обработан.")
+    # Отправляем администратору
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        await bot.send_photo(ADMIN_ID, file_id, caption=f"Новый заказ #{data.get('order_id', '')}")
+    elif message.document:
+        await bot.send_document(ADMIN_ID, message.document.file_id, caption=f"Новый заказ #{data.get('order_id', '')}")
+    await state.clear()
+
+# ====== Веб-сервер для Render ======
+async def handle(request):
+    return web.Response(text="Bot is alive!")
+
+async def start_web():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+
+# ====== Главная функция ======
+async def main():
+    await start_web()
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
